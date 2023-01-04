@@ -1,10 +1,10 @@
 ### [简体中文](#简体中文) | [English](#English)
 
-#简体中文
+# 简体中文
 ## [go-scout是一个侦察文件、目录发生变化的侦察服务](#)
 ![golang](https://img.shields.io/badge/golang-v1.19-blue)
 ![simple](https://img.shields.io/badge/simple-extend-green)
-![development](https://img.shields.io/badge/development-v0.1-yellowgreen)
+![development](https://img.shields.io/badge/development-master-yellowgreen)
 ![serve](https://img.shields.io/badge/serve-v0.2-red)
 ### 特性
 * 简单已用
@@ -37,7 +37,7 @@
 ### 服务版用法
 [正在进行中......]()
 
-#English
+# English
 
 ### Character
 * [Simple and easy to use]()
