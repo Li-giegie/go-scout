@@ -1,4 +1,4 @@
-package go_scout
+package main
 
 import (
 	"fmt"

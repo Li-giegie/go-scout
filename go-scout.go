@@ -1,4 +1,4 @@
-package go_scout
+package main
 
 import (
 	"bytes"
@@ -23,9 +23,9 @@ type RunningMode byte
 
 const (
 	// 一次可能侦察多个路径 当侦察到一个路径变化后不再侦察剩下来的路径进入休眠 休眠超时后继续侦察
-	RunnMode_ChangeOnce RunningMode = 10
+	RunnMode_ChangeOnce RunningMode = 1
 	// 侦察所有变化的文件、目录
-	RunnMode_AllChange RunningMode = 11
+	RunnMode_AllChange RunningMode = 0
 )
 
 type Scout struct {
@@ -50,16 +50,9 @@ type ScoutChange struct {
 // sleepTime /ms 每一次侦察后休眠时长 理想值 1000
 //_path dirs or files	侦察的文件或目录可配置多个
 // return Scout *Scout filePaths []string err error
-func New(sleepTime int64,_path ...string) (*Scout,[]string,error) {
-	var socut = Scout{
-		filePaths: sync.Map{},
-		SleepTime: sleepTime,
-		Path: _path,
-		RunMode: RunnMode_AllChange,
-		Debug: "disable",
-	}
+func New(socut *Scout) (*Scout,[]string,error) {
 
-	files,err := getFilePaths(_path...)
+	files,err := getFilePaths(socut.Path...)
 	if err != nil {
 		return nil,nil,err
 	}
@@ -71,7 +64,7 @@ func New(sleepTime int64,_path ...string) (*Scout,[]string,error) {
 		}
 		socut.filePaths.Store(file_,mod)
 	}
-	return &socut,files,nil
+	return socut,files,nil
 }
 
 // running Scout 开始侦察文件变化 入参是一个回调方法 当侦擦到变化时调用回调函数

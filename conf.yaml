@@ -1,0 +1,7 @@
+scout:
+    sleeptime: 1000
+    path:
+      - ./
+    runmode: 0
+    debug: enable
+api: "http://127.0.0.1:8081/"
