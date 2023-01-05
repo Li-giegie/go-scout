@@ -6,10 +6,17 @@
 ![simple](https://img.shields.io/badge/simple-extend-green)
 ![development](https://img.shields.io/badge/development-master-yellowgreen)
 ![serve](https://img.shields.io/badge/serve-v0.2-red)
+
+[作者邮箱1261930106@qq.com]()
+
 ### 特性
 * 简单已用
 * 快速 基于 `go语言` 性能无需多言
 * 友好的二次开发
+
+### 版本
+* [开发版本 位于master分支](#)
+* [服务版本 位于v0.2分支](#)
 
 ### 开发版用法
 
@@ -39,10 +46,16 @@
 
 # English
 
+[author email 1261930106@qq.com]()
+
 ### Character
 * [Simple and easy to use]()
 * [High performance based on go language performance need not be said]()
 * [Friendly secondary development]()
+
+### version
+* [Development version in master branch](#)
+* [serve version in v0.2 branch](#)
 
 ### Development version usage
 
