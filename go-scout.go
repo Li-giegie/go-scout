@@ -61,6 +61,7 @@ type fileInfo struct {
 }
 
 func init()  {
+
 	ctm = map[ChangeType]string{
 		ChangeType_Create:"新建",
 		ChangeType_Update: "更新",
