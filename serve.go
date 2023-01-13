@@ -20,16 +20,15 @@ type conf struct {
 var _conf conf
 func main()  {
 	go testHttpServer()
-
 	parseFlag()
-	scout,Paths,err := New(&_conf.Scout)
+	scout,_,err := New(800,_conf.Path...)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	fmt.Println("Paths：",Paths)
+	//fmt.Println("Paths：",Paths)
 
 	scout.SetDebug()
-	err = scout.Scout(func(changePath *[]ScoutChange) {
+	err = scout.Scout(func(changePath []*fileInfo) {
 		buf,err := json.Marshal(&changePath)
 		if err != nil {
 			log.Fatalln("main.json.Marshal(&changePath) err: ",err)
@@ -90,7 +89,7 @@ func testHttpServer(){
 			return
 		}
 
-		var scout []ScoutChange
+		var scout []fileInfo
 
 		err = json.Unmarshal(buf,&scout)
 		if err != nil {
