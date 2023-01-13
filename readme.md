@@ -43,7 +43,7 @@
 ```
 
 ### 服务版用法
-[正在进行中......]()
+[服务版是一个将发生变化的文件、目录详细信息通过配置的Http接口 发送Post请求到指定的接口]()
 
 # English
 
@@ -82,4 +82,4 @@
 ```
 
 ### Serve version usage
-[ing......]()
+[The service version is a Post request that sends the changed file and directory details through the configured Http interface to the specified interface]()
