@@ -117,19 +117,13 @@ func (s *Scout) Scout(changeFunc func(changePath []*FileInfo)) error {
 		isRunnMode_ChangeOnce_ok = false
 		for _, file_ := range files {
 			info,err := getFileInfo(file_)
-			// 2023/1/13 编辑
-			// modTime = getFileMod(file_)
 			if err != nil { return appendError("get file modTime err -Scout",file_) }
 			info.Path = file_
 			v,ok := s.filePaths.Load(file_)
-			// 2023/1/13 添加
-			// 情况一、新增文件
 			if !ok {
 				if s.Debug == "enable" && s.RunMode == RunnMode_AllChange{ log.Println("RunMode AllChange Create") }
 				info.Type = ChangeType_Create
-
 				cp = append(cp,info)
-
 				s.filePaths.Store(file_,info.ModTime.UnixNano())
 				if s.RunMode == RunnMode_ChangeOnce {
 					isRunnMode_ChangeOnce_ok = true
@@ -175,10 +169,9 @@ func (s *Scout) Scout(changeFunc func(changePath []*FileInfo)) error {
 			return true
 		})
 
-		if isRunnMode_ChangeOnce_ok {
+		if len(cp) > 0 {
 			changeFunc(cp)
 		}
-
 	}
 
 
