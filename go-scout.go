@@ -106,6 +106,7 @@ func (s *Scout) Scout(changeFunc func(changePath []*FileInfo)) error {
 	var cp []*FileInfo
 	//var modTime int64
 	var isRunnMode_ChangeOnce_ok bool
+
 	for  {
 		time.Sleep(st)
 		files,err := getFilePaths(s.Path...)
@@ -128,6 +129,7 @@ func (s *Scout) Scout(changeFunc func(changePath []*FileInfo)) error {
 				info.Type = ChangeType_Create
 
 				cp = append(cp,info)
+
 				s.filePaths.Store(file_,info.ModTime.UnixNano())
 				if s.RunMode == RunnMode_ChangeOnce {
 					isRunnMode_ChangeOnce_ok = true
@@ -165,6 +167,7 @@ func (s *Scout) Scout(changeFunc func(changePath []*FileInfo)) error {
 			if !isRepetition(files,fn) {
 				cp = append(cp, &FileInfo{Name: fn,Type: ChangeType_Del})
 				s.filePaths.Delete(key)
+				isRunnMode_ChangeOnce_ok = true
 				if s.Debug == "enable" && s.RunMode == RunnMode_AllChange{
 					log.Println("RunMode AllChange delete")
 				}
@@ -172,7 +175,10 @@ func (s *Scout) Scout(changeFunc func(changePath []*FileInfo)) error {
 			return true
 		})
 
-		changeFunc(cp)
+		if isRunnMode_ChangeOnce_ok {
+			changeFunc(cp)
+		}
+
 	}
 
 
