@@ -39,6 +39,8 @@ type Scout struct {
 	Path []string
 	// 运行侦察的模式
 	RunMode RunningMode
+	// 是否侦察空目录
+	ScoutMnt bool
 	// 调试模式
 	Debug string
 }
@@ -50,7 +52,7 @@ type Scout struct {
 //	Type ChangeType
 //}
 
-type fileInfo struct {
+type FileInfo struct {
 	Name string
 	Size int64
 	Mode os.FileMode
@@ -71,7 +73,7 @@ func init()  {
 // sleepTime /ms 每一次侦察后休眠时长 理想值 1000
 //_path dirs or files	侦察的文件或目录可配置多个
 // return Scout *Scout filePaths []string err error
-func New(sleepTime int64,_path ...string) (*Scout,[]*fileInfo,error) {
+func New(sleepTime int64,_path ...string) (*Scout,[]*FileInfo,error) {
 	var socut = Scout{
 		filePaths: sync.Map{},
 		SleepTime: sleepTime,
@@ -84,7 +86,7 @@ func New(sleepTime int64,_path ...string) (*Scout,[]*fileInfo,error) {
 	if err != nil {
 		return nil,nil,err
 	}
-	var infos = make([]*fileInfo,0)
+	var infos = make([]*FileInfo,0)
 	for _, file_ := range files {
 		info,err := getFileInfo(file_)
 		if err != nil {
@@ -98,10 +100,10 @@ func New(sleepTime int64,_path ...string) (*Scout,[]*fileInfo,error) {
 }
 
 // running Scout 开始侦察文件变化 入参是一个回调方法 当侦擦到变化时调用回调函数
-func (s *Scout) Scout(changeFunc func(changePath []*fileInfo)) error {
+func (s *Scout) Scout(changeFunc func(changePath []*FileInfo)) error {
 
 	var st = time.Millisecond * time.Duration(s.SleepTime)
-	var cp []*fileInfo
+	var cp []*FileInfo
 	//var modTime int64
 	var isRunnMode_ChangeOnce_ok bool
 	for  {
@@ -110,7 +112,7 @@ func (s *Scout) Scout(changeFunc func(changePath []*fileInfo)) error {
 		if err != nil {
 			return err
 		}
-		cp = make([]*fileInfo, 0)
+		cp = make([]*FileInfo, 0)
 		isRunnMode_ChangeOnce_ok = false
 		for _, file_ := range files {
 			info,err := getFileInfo(file_)
@@ -161,7 +163,7 @@ func (s *Scout) Scout(changeFunc func(changePath []*fileInfo)) error {
 			fn := key.(string)
 
 			if !isRepetition(files,fn) {
-				cp = append(cp, &fileInfo{Name: fn,Type: ChangeType_Del})
+				cp = append(cp, &FileInfo{Name: fn,Type: ChangeType_Del})
 				s.filePaths.Delete(key)
 				if s.Debug == "enable" && s.RunMode == RunnMode_AllChange{
 					log.Println("RunMode AllChange delete")
@@ -266,14 +268,14 @@ func getFileMod(_path string) int64 {
 }
 
 // 获取文件信息 替换 getFileMod
-func getFileInfo(_path string) (*fileInfo,error) {
+func getFileInfo(_path string) (*FileInfo,error) {
 	info ,err := os.Stat(_path)
 	if err != nil {
 		log.Println(err)
 		return nil,err
 	}
 
-	return &fileInfo{
+	return &FileInfo{
 		Name:    info.Name(),
 		Size:    info.Size(),
 		Mode:    info.Mode(),
