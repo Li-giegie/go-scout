@@ -4,17 +4,20 @@ import (
 	"fmt"
 	"log"
 	"testing"
+	"time"
 )
 
-func TestNew(t *testing.T) {
+func TestNewA(t *testing.T) {
 
-	scout,Paths,err := New(1000,"./")
+	scout,Paths,err := New("./test",time.Second*3)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	fmt.Println("Paths：",Paths)
 
-	scout.SetDebug()
+	for _, path := range Paths {
+		fmt.Println("Paths：",path.Name)
+	}
+
 	err = scout.Scout(func(changePath *[]ScoutChange) {
 		for _, change := range *changePath {
 			fmt.Printf("type:%v path:%v \n",change.Type,change.Path)

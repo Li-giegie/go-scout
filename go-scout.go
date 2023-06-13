@@ -1,13 +1,7 @@
 package main
 
 import (
-	"bytes"
-	"errors"
-	_file "github.com/dablelv/go-huge-util/file"
-	"log"
-	"os"
-	"strings"
-	"sync"
+	gf "github.com/Li-giegie/go-utils"
 	"time"
 )
 
@@ -21,23 +15,13 @@ const (
 
 type RunningMode byte
 
-const (
-	// 一次可能侦察多个路径 当侦察到一个路径变化后不再侦察剩下来的路径进入休眠 休眠超时后继续侦察
-	RunnMode_ChangeOnce RunningMode = 1
-	// 侦察所有变化的文件、目录
-	RunnMode_AllChange RunningMode = 0
-)
-
 type Scout struct {
-	filePaths sync.Map
+	filePaths map[string] int64
 	// 休眠时长
-	SleepTime int64
+	SleepTime time.Duration
 	// 侦察变化的路径
-	Path []string
-	// 运行侦察的模式
-	RunMode RunningMode
-	// 调试模式
-	Debug string
+	Path string
+
 }
 
 type ScoutChange struct {
@@ -45,197 +29,104 @@ type ScoutChange struct {
 	Path string
 	// 改变的类型 增删改
 	Type ChangeType
+
+	*gf.FileInfo
 }
 
 // sleepTime /ms 每一次侦察后休眠时长 理想值 1000
 //_path dirs or files	侦察的文件或目录可配置多个
 // return Scout *Scout filePaths []string err error
-func New(socut *Scout) (*Scout,[]string,error) {
+func New(dirPath string,sleepTime time.Duration) (*Scout,[]*gf.FileInfo,error) {
 
-	files,err := getFilePaths(socut.Path...)
+	fsi,err := gf.GetDirInfo(dirPath)
 	if err != nil {
 		return nil,nil,err
 	}
-	var mod int64
-	for _, file_ := range files {
-		mod = getFileMod(file_)
-		if mod == -1 {
-			return nil,nil,errors.New("get file modTime err -New")
-		}
-		socut.filePaths.Store(file_,mod)
+	var s Scout
+	s.filePaths = make(map[string]int64)
+	s.Path =  dirPath
+	s.SleepTime = sleepTime
+
+	for _, file_ := range fsi {
+		s.filePaths[file_.Name] = file_.ModTime.UnixNano()
 	}
-	return socut,files,nil
+	return &s,fsi,nil
 }
 
 // running Scout 开始侦察文件变化 入参是一个回调方法 当侦擦到变化时调用回调函数
 func (s *Scout) Scout(changeFunc func(changePath *[]ScoutChange)) error {
-
-	var st = time.Millisecond * time.Duration(s.SleepTime)
 	var cp []ScoutChange
-	var modTime int64
-	var isRunnMode_ChangeOnce_ok bool
 	for  {
-		time.Sleep(st)
-		files,err := getFilePaths(s.Path...)
+		time.Sleep(s.SleepTime)
+		files,err := gf.GetDirInfo(s.Path)
 		if err != nil {
 			return err
 		}
 		cp = make([]ScoutChange, 0)
-		isRunnMode_ChangeOnce_ok = false
+
 		for _, file_ := range files {
+			v,ok := s.filePaths[file_.Name]
 
-			modTime = getFileMod(file_)
-			if modTime == -1 { return appendError("get file modTime err -Scout",file_) }
-
-			v,ok := s.filePaths.Load(file_)
+			//新建文件、文件夹事件
 			if !ok {
-				if s.Debug == "enable" && s.RunMode == RunnMode_AllChange{ log.Println("RunMode AllChange Create") }
-
 				cp = append(cp, ScoutChange{
-					Path: file_,
+					Path: file_.Name,
 					Type: ChangeType_Create,
+					FileInfo:file_,
 				})
-				s.filePaths.Store(file_,modTime)
-				if s.RunMode == RunnMode_ChangeOnce {
-					isRunnMode_ChangeOnce_ok = true
-					if s.Debug == "enable"{ log.Println("RunMode ChangeOnce create ") }
-					break
-				}
+				s.filePaths[file_.Name] = file_.ModTime.UnixNano()
 				continue
 			}
 
-			if v != modTime {
-				if s.Debug == "enable" && s.RunMode == RunnMode_AllChange{ log.Println("RunMode AllChange Update") }
+			//文件修改事件
+			if v != file_.ModTime.UnixNano() {
+				//if s.Debug == "enable" && s.RunMode == RunnMode_AllChange{ log.Println("RunMode AllChange Update") }
 				cp = append(cp, ScoutChange{
-					Path: file_,
+					Path: file_.Name,
 					Type: ChangeType_Update,
+					FileInfo:file_,
 				})
-				s.filePaths.Store(file_,modTime)
-				if s.RunMode == RunnMode_ChangeOnce {
-					isRunnMode_ChangeOnce_ok = true
-					if s.Debug == "enable"{ log.Println("RunMode ChangeOnce Update ") }
-					break
-				}
+				s.filePaths[file_.Name] = file_.ModTime.UnixNano()
 				continue
 			}
 
 		}
 
-		s.filePaths.Range(func(key, value any) bool {
-
-			if s.RunMode == RunnMode_ChangeOnce && isRunnMode_ChangeOnce_ok {
-				if s.Debug == "enable"{
-					log.Println("RunMode ChangeOnce delete no Scout")
-				}
-				return false
-			}
-			fn := key.(string)
-			if !isRepetition(files,fn) {
-				cp = append(cp, ScoutChange{
-					Path: fn,
-					Type: ChangeType_Del,
-				})
-				s.filePaths.Delete(key)
-				if s.Debug == "enable" && s.RunMode == RunnMode_AllChange{
-					log.Println("RunMode AllChange delete")
-				}
-			}
-			return true
-		})
-
+		//删除事件
+		delPath := s.isRepetition(files)
+		cp = append(cp, delPath...)
+		if len(cp) < 1 {
+			continue
+		}
+		//总回调
 		changeFunc(&cp)
 	}
 
 
 }
 
-// 设置运行模式
-func (s *Scout) SetRunMode(mode RunningMode)  {
-	s.RunMode = mode
-}
-
-// [enable | disable ] 是否开启调试 入参数为空 执行取反
-func (s *Scout) SetDebug(arg ...bool)  {
-	if arg == nil {
-		if s.Debug == "enable" { s.Debug = "disable"
-		}else { s.Debug = "enable" }
-		return
-	}
-	if arg[0] {
-		s.Debug = "enable"
-		return
-	}
-	s.Debug = "disable"
-}
-
-// 获取路径
-func getFilePaths(_path ...string) ([]string,error) {
-	var result =make([]string,0)
-	for _, s := range _path {
-		s = strings.ReplaceAll(strings.ReplaceAll(s,`\`,"/"),"//","/")
-		exist,err := _file.IsPathExist(s)
-		if !exist || err != nil {
-			return nil, appendError("not a path err:",err)
-		}
-
-		if !_file.IsDir(s) {
-			if isRepetition(result,s) {
-				continue
-			}
-			result = append(result, s)
-			continue
-		}
-		files,err := _file.GetDirAllEntryPaths(s,true)
-		if err != nil {
-			return nil, appendError("open dir [",s,"] err",err)
-		}
-		for _, file_ := range files {
-			file_ = strings.ReplaceAll(strings.ReplaceAll(file_,`\`,"/"),"//","/")
-			if isRepetition(result,file_) {
-				continue
-			}
-			result = append(result, file_)
-		}
-
-	}
-
-	return result,nil
-}
 
 // 是否重复
-func isRepetition(src []string,dist string) bool {
-	for _, s := range src {
-		if s == dist {
-			return true
+func (s *Scout) isRepetition (_new []*gf.FileInfo) []ScoutChange {
+	var fi = make([]ScoutChange,0)
+	var isDel bool
+	var info *gf.FileInfo
+	for k, _ := range s.filePaths {
+		isDel = true
+		for _, info = range _new {
+			if info.Name == k {
+				isDel = false
+			}
+			continue
+		}
+		if isDel {
+			delete(s.filePaths,k)
+			fi = append(fi, ScoutChange{
+				Path: k,
+				Type: ChangeType_Del,
+				FileInfo:info,
+			})
 		}
 	}
-	return false
+	return fi
 }
-
-// 入参 error、string 类型 生成新的 error
-func appendError(errs ...interface{}) error {
-	var errBuf = new(bytes.Buffer)
-	for _, err := range errs {
-		switch val := err.(type) {
-		case error:
-			errBuf.WriteString(val.Error())
-		case string:
-			errBuf.WriteString(val)
-		}
-	}
-
-	return errors.New(errBuf.String())
-}
-
-// 获取文件、目录变成时间
-func getFileMod(_path string) int64 {
-	info ,err := os.Stat(_path)
-	if err != nil {
-		log.Println(err)
-		return -1
-	}
-
-	return info.ModTime().UnixNano()
-}
-
-

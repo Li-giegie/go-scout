@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 type conf struct {
@@ -22,18 +23,20 @@ func main()  {
 	go testHttpServer()
 
 	parseFlag()
-	scout,Paths,err := New(&_conf.Scout)
+	scout,Paths,err := New(_conf.Scout.Path,_conf.SleepTime)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	fmt.Println("Paths：",Paths)
+	for _, path := range Paths {
+		fmt.Println("管理的目录：",path.Name)
+	}
 
-	scout.SetDebug()
 	err = scout.Scout(func(changePath *[]ScoutChange) {
 		buf,err := json.Marshal(&changePath)
 		if err != nil {
 			log.Fatalln("main.json.Marshal(&changePath) err: ",err)
 		}
+		fmt.Println(string(buf))
 		_,err = http.Post(_conf.Api,"application/json",bytes.NewReader(buf))
 		if err != nil {
 			log.Println("http request err: ",err)
@@ -51,12 +54,10 @@ func parseFlag()  {
 		buf,err := yaml.Marshal(
 			&conf{
 				Scout:Scout{
-				SleepTime: 1000,
-				Path:      []string{"./"},
-				RunMode:   0,
-				Debug:     "disable",
+				SleepTime: time.Second*3,
+				Path:      "./",
 				},
-				Api: "通知接口",
+				Api: "https://",
 			},
 		)
 		if err != nil {
