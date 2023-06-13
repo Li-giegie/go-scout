@@ -8,10 +8,16 @@
 ![serve](https://img.shields.io/badge/serve-v0.2-red)
 
 [作者邮箱1261930106@qq.com]()
-
+### [核心原理:检测文件的变更时间，推导是否新建、删除、更新文件，基于此项目可以轻松的制作一些对文件的监控程序。]()
 ### 特性
+<<<<<<< HEAD
 * 简单已用
+=======
+* 简单易用
+* 快速 基于 `go语言` 性能无需多言
+>>>>>>> d5b6441e32e3de228e1ce797bdd10a30218a68c6
 * 友好的二次开发
+* 服务版和开发版
 
 ### 版本
 * [开发版本 位于master分支](#)
@@ -41,7 +47,7 @@
 ```
 
 ### 服务版用法
-[正在进行中......]()
+[服务版是一个将发生变化的文件、目录详细信息通过配置的Http接口 发送Post请求到指定的接口]()
 
 # English
 
@@ -80,4 +86,4 @@
 ```
 
 ### Serve version usage
-[ing......]()
+[The service version is a Post request that sends the changed file and directory details through the configured Http interface to the specified interface]()
