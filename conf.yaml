@@ -1,4 +1,3 @@
-scout:
-    sleeptime: 3s
-    path: ./test
+sleeptime: 3s
+path: ./
 api: https://

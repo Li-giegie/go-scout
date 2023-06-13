@@ -13,8 +13,6 @@ const (
 	ChangeType_Update ChangeType = 3
 )
 
-type RunningMode byte
-
 type Scout struct {
 	filePaths map[string] int64
 	// 休眠时长

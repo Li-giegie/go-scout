@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"gopkg.in/yaml.v3"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -14,16 +13,15 @@ import (
 )
 
 type conf struct {
-	Scout
+	SleepTime time.Duration
+	Path string
 	Api string
 }
 
 var _conf conf
 func main()  {
-	go testHttpServer()
-
 	parseFlag()
-	scout,Paths,err := New(_conf.Scout.Path,_conf.SleepTime)
+	scout,Paths,err := New(_conf.Path,_conf.SleepTime)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -53,10 +51,8 @@ func parseFlag()  {
 	if *createConf != "" {
 		buf,err := yaml.Marshal(
 			&conf{
-				Scout:Scout{
 				SleepTime: time.Second*3,
 				Path:      "./",
-				},
 				Api: "https://",
 			},
 		)
@@ -79,33 +75,5 @@ func parseFlag()  {
 	if err != nil {
 		fmt.Println("配置文件序列化失败：",err)
 		os.Exit(1)
-	}
-}
-
-func testHttpServer(){
-	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
-		defer request.Body.Close()
-		buf,err := io.ReadAll(request.Body)
-		if err != nil {
-			log.Println("http read body err：",err)
-			return
-		}
-
-		var scout []ScoutChange
-
-		err = json.Unmarshal(buf,&scout)
-		if err != nil {
-			log.Println("http json Unmarshal err：",err)
-			return
-		}
-		for _, change := range scout {
-			fmt.Printf("http change :type%v path %v\n",change.Type,change.Path)
-		}
-
-	})
-
-	err := http.ListenAndServe(":8081",nil)
-	if err != nil {
-		log.Fatalln(err)
 	}
 }
