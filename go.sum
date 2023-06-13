@@ -1,6 +1,11 @@
+github.com/Li-giegie/go-utils v0.0.0-20230520131651-d12fd0565578 h1:VIvms2cDYNmbDSh5wfEpdJjKxN1MTfQSIldPKWbpTkA=
+github.com/Li-giegie/go-utils v0.0.0-20230520131651-d12fd0565578/go.mod h1:VmgorL5MYveXQAY6Jcd/kcbBGnt6Ehjqiv7+0b+Q/i8=
 github.com/dablelv/go-huge-util v0.0.30 h1:QuCMQQzhH67qB0S1u1eRmfzgZlH+qCGgHvhAbO/e1M4=
 github.com/dablelv/go-huge-util v0.0.30/go.mod h1:CTdXt+L11UBDS+dg9LPgslqDMXcCvhTv51IikcQDxGA=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5CcY=
+gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
+gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c h1:dUUwHk2QECo/6vqA44rthZ8ie2QXMNeKRTHCNY2nXvo=
+gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
