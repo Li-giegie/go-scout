@@ -21,6 +21,7 @@ type conf struct {
 var _conf conf
 func main()  {
 	parseFlag()
+
 	scout,Paths,err := New(_conf.Path,_conf.SleepTime)
 	if err != nil {
 		log.Fatalln(err)
@@ -28,8 +29,9 @@ func main()  {
 	for _, path := range Paths {
 		fmt.Println("管理的目录：",path.Name)
 	}
-
-	err = scout.Scout(func(changePath *[]ScoutChange) {
+	log.Println("dir:",_conf.Path)
+	log.Println("共计管理目录：",len(Paths))
+	err = scout.Scout(func(changePath []*ScoutChange) {
 		buf,err := json.Marshal(&changePath)
 		if err != nil {
 			log.Fatalln("main.json.Marshal(&changePath) err: ",err)
