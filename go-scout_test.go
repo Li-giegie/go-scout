@@ -45,15 +45,21 @@ func TestRangeMap(t *testing.T){
 }
 
 func TestDeleteCheckt(t *testing.T) {
+
 	s,f,err := New("D:\\_project\\GO Project\\mod",time.Millisecond*10)
 	if err != nil {
 		log.Fatalln(err)
 	}
 	log.Println("打开数量：",len(f))
 	t1 := time.Now()
-	res := s.isRepetition(f)
+	//res := s.isRepetition(f)
+	res := s.isRepetitionV2(f)
 	fmt.Println(time.Since(t1))
 	for _, re := range res {
 		fmt.Println(*re)
 	}
+
+
+
+
 }

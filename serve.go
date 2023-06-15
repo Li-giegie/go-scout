@@ -32,11 +32,15 @@ func main()  {
 	log.Println("dir:",_conf.Path)
 	log.Println("共计管理目录：",len(Paths))
 	err = scout.Scout(func(changePath []*ScoutChange) {
+
+		for i, change := range changePath {
+			fmt.Println("change：",i,change.Name,change.Type)
+		}
 		buf,err := json.Marshal(&changePath)
 		if err != nil {
-			log.Fatalln("main.json.Marshal(&changePath) err: ",err)
+			log.Fatalln(err)
 		}
-		fmt.Println(string(buf))
+
 		_,err = http.Post(_conf.Api,"application/json",bytes.NewReader(buf))
 		if err != nil {
 			log.Println("http request err: ",err)
