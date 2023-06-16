@@ -1,10 +1,11 @@
-package main
+package server
 
 import (
 	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/Li-giegie/go-scout"
 	"gopkg.in/yaml.v3"
 	"log"
 	"net/http"
@@ -23,16 +24,16 @@ var _conf conf
 func main()  {
 	parseFlag()
 
-	scout,Paths,err := New(_conf.Path,_conf.SleepTime)
+	scout,Paths,err := go_scout.New(_conf.Path, _conf.SleepTime)
 	if err != nil {
 		log.Fatalln(err)
 	}
 	for _, path := range Paths {
 		fmt.Println("管理的目录：",path.Name)
 	}
-	log.Println("dir:",_conf.Path)
+	log.Println("dir:", _conf.Path)
 	log.Println("共计管理目录：",len(Paths))
-	err = scout.Scout(func(changePath []*ScoutChange) {
+	err = scout.Scout(func(changePath []*go_scout.ScoutChange) {
 
 		for i, change := range changePath {
 			fmt.Println("change：",i,change.Name,change.Type)
