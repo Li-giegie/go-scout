@@ -49,17 +49,17 @@ func New(dirPath string,sleepTime time.Duration) (*Scout,[]*gf.FileInfo,error) {
 	s.filePaths = make(map[string]int64)
 	s.Path =  dirPath
 	s.SleepTime = sleepTime
-
 	for _, file_ := range fsi {
 		s.filePaths[file_.Name] = file_.ModTime.UnixNano()
 	}
+	log.Println("间隔侦查时间：",s.SleepTime)
 	return &s,fsi,nil
 }
 
 // running Scout 开始侦察文件变化 入参是一个回调方法 当侦擦到变化时调用回调函数
 func (s *Scout) Scout(changeFunc func(changePath []*ScoutChange)) error {
 	var tmpSC []*ScoutChange
-	log.Println("间隔侦查时间：",s.SleepTime)
+
 	for  {
 		tmpSC = make([]*ScoutChange, 0)
 		time.Sleep(s.SleepTime)
@@ -71,23 +71,16 @@ func (s *Scout) Scout(changeFunc func(changePath []*ScoutChange)) error {
 
 		//删除事件
 		for _, s2 := range findOldNotExist(s.filePaths, files) {
-			delete(s.filePaths,s2)
 			tmpSC = append(tmpSC, &ScoutChange{
 				Path: s2,
 				Type: ChangeType_Del,
-				FileInfo:&gf.FileInfo{
-					Name:    s2,
-					Size:    0,
-					Mode:    0,
-					ModTime: time.Time{},
-					IsDir:   false,
-					Err:     nil,
-				},
+				FileInfo:nil,
 			})
+			delete(s.filePaths,s2)
 		}
 
 		for i:=0;i< len(files);i++{
-			v,ok := s.readFilePath(files[i].Name)
+			v,ok := s.filePaths[files[i].Name]
 			//新建文件、文件夹事件
 			if !ok {
 				tmpSC = append(tmpSC, &ScoutChange{
@@ -95,7 +88,7 @@ func (s *Scout) Scout(changeFunc func(changePath []*ScoutChange)) error {
 					Type: ChangeType_Create,
 					FileInfo:files[i],
 				})
-				s.writeFilePath(files[i].Name,files[i].ModTime.UnixNano())
+				s.filePaths[files[i].Name]=files[i].ModTime.UnixNano()
 				continue
 			}
 			//文件修改事件
@@ -105,7 +98,7 @@ func (s *Scout) Scout(changeFunc func(changePath []*ScoutChange)) error {
 					Type: ChangeType_Update,
 					FileInfo:files[i],
 				})
-				s.writeFilePath(files[i].Name,files[i].ModTime.UnixNano())
+				s.filePaths[files[i].Name]=files[i].ModTime.UnixNano()
 				continue
 			}
 		}

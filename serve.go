@@ -19,6 +19,7 @@ type conf struct {
 }
 
 var _conf conf
+
 func main()  {
 	parseFlag()
 
@@ -53,6 +54,7 @@ func main()  {
 func parseFlag()  {
 	confF := flag.String("conf","./conf.yaml","指定配置文件启动")
 	createConf := flag.String("createconf","","conf.yaml 创建一个配置文件模板 输入文件名")
+
 	flag.Parse()
 	if *createConf != "" {
 		buf,err := yaml.Marshal(
