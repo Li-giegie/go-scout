@@ -4,6 +4,7 @@ import (
 	"fmt"
 	gf "github.com/Li-giegie/go-utils"
 	"log"
+	"os"
 	"sync"
 	"time"
 )
@@ -21,6 +22,10 @@ type Scout struct {
 	// 休眠时长
 	SleepTime time.Duration
 	// 侦察变化的路径
+
+	//过滤打开的文件 返回值能决定当前回调是否过滤文件
+	FilterOpenFileFunc func(fullPath string, info os.FileInfo) (pass bool)
+
 	Path string
 	lock sync.Mutex
 	wg sync.WaitGroup
@@ -40,8 +45,8 @@ type ScoutChange struct {
 // sleepTime /ms 每一次侦察后休眠时长 理想值 1000
 //_path dirs or files	侦察的文件或目录
 // return Scout *Scout filePaths []string err error
-func New(dirPath string,sleepTime time.Duration) (*Scout,[]*gf.FileInfo,error) {
-	fsi,err := gf.GetDirInfo(dirPath)
+func New(dirPath string,sleepTime time.Duration,FilterOpenFileFunc ...func(fullPath string, info os.FileInfo) (pass bool)) (*Scout,[]*gf.FileInfo,error) {
+	fsi,err := gf.GetDirInfo(dirPath,FilterOpenFileFunc...)
 	if err != nil {
 		return nil,nil,err
 	}
@@ -49,6 +54,9 @@ func New(dirPath string,sleepTime time.Duration) (*Scout,[]*gf.FileInfo,error) {
 	s.filePaths = make(map[string]int64)
 	s.Path =  dirPath
 	s.SleepTime = sleepTime
+	if len(FilterOpenFileFunc) > 0 {
+		s.FilterOpenFileFunc = FilterOpenFileFunc[0]
+	}
 	for _, file_ := range fsi {
 		s.filePaths[file_.Name] = file_.ModTime.UnixNano()
 	}
@@ -64,7 +72,7 @@ func (s *Scout) Scout(changeFunc func(changePath []*ScoutChange)) error {
 		tmpSC = make([]*ScoutChange, 0)
 		time.Sleep(s.SleepTime)
 
-		files,err := gf.GetDirInfo(s.Path)
+		files,err := gf.GetDirInfo(s.Path,s.FilterOpenFileFunc)
 		if err != nil {
 			return err
 		}
