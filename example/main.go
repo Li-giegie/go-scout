@@ -1,15 +1,3 @@
-## [go-scout是一个侦察文件、目录发生变化的侦察服务](#)
-![golang](https://img.shields.io/badge/golang-v1.19-blue)
-![simple](https://img.shields.io/badge/simple-extend-green)
-
-### 获取
-```
-go get -u github.com/Li-giegie/go-scout
-```
-
-### 使用
-
-```go
 package main
 
 import (
@@ -37,5 +25,3 @@ func main() {
 		}
 	})
 }
-
-```
