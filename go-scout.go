@@ -2,9 +2,10 @@ package go_scout
 
 import (
 	"fmt"
-	gf "github.com/Li-giegie/go-utils"
-	"log"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -13,237 +14,137 @@ type ChangeType byte
 
 const (
 	ChangeType_Create ChangeType = 1
-	ChangeType_Del ChangeType = 2
+	ChangeType_Del    ChangeType = 2
 	ChangeType_Update ChangeType = 3
 )
 
+func (c ChangeType) String() string {
+	switch c {
+	case ChangeType_Create:
+		return "Create"
+	case ChangeType_Update:
+		return "Update"
+	case ChangeType_Del:
+		return "Delete"
+	case 0:
+		return "null"
+	default:
+		panic("invalid format :" + strconv.Itoa(int(c)))
+	}
+}
+
 type Scout struct {
-	filePaths map[string] int64
+	cache map[string]*FileInfo
 	// 休眠时长
-	SleepTime time.Duration
+	sleep time.Duration
 	// 侦察变化的路径
-
-	//过滤打开的文件 返回值能决定当前回调是否过滤文件
-	FilterOpenFileFunc func(fullPath string, info os.FileInfo) (pass bool)
-
-	Path string
-	lock sync.Mutex
-	wg sync.WaitGroup
+	root  string
+	state bool
+	lock  sync.RWMutex
 }
-
-type ScoutChange struct {
-	// 改变的路径
-	Path string
-	// 改变的类型 增删改
-	Type ChangeType
-
-	*gf.FileInfo
-}
-
-
 
 // sleepTime /ms 每一次侦察后休眠时长 理想值 1000
-//_path dirs or files	侦察的文件或目录
-// return Scout *Scout filePaths []string err error
-func New(dirPath string,sleepTime time.Duration,FilterOpenFileFunc ...func(fullPath string, info os.FileInfo) (pass bool)) (*Scout,[]*gf.FileInfo,error) {
-	fsi,err := gf.GetDirInfo(dirPath,FilterOpenFileFunc...)
+// root	侦察的文件或目录
+func NewScout(root string, sleep time.Duration) (*Scout, error) {
+	s := new(Scout)
+	s.state = true
+	s.root = root
+	s.sleep = sleep
+	_, err := os.Stat(root)
 	if err != nil {
-		return nil,nil,err
+		return nil, err
 	}
-	var s Scout
-	s.filePaths = make(map[string]int64)
-	s.Path =  dirPath
-	s.SleepTime = sleepTime
-	if len(FilterOpenFileFunc) > 0 {
-		s.FilterOpenFileFunc = FilterOpenFileFunc[0]
+	files, err := GetFiles(root)
+	if err != nil {
+		return nil, err
 	}
-	for _, file_ := range fsi {
-		s.filePaths[file_.Name] = file_.ModTime.UnixNano()
+	s.cache = make(map[string]*FileInfo, len(files))
+	for _, item := range files {
+		s.cache[item.id()] = item
 	}
-	log.Println("间隔侦查时间：",s.SleepTime)
-	return &s,fsi,nil
+	return s, nil
 }
 
 // running Scout 开始侦察文件变化 入参是一个回调方法 当侦擦到变化时调用回调函数
-func (s *Scout) Scout(changeFunc func(changePath []*ScoutChange)) error {
-	var tmpSC []*ScoutChange
-
-	for  {
-		tmpSC = make([]*ScoutChange, 0)
-		time.Sleep(s.SleepTime)
-
-		files,err := gf.GetDirInfo(s.Path,s.FilterOpenFileFunc)
+func (s *Scout) Start(changeFunc func(info []*FileInfo)) error {
+	for s.state {
+		time.Sleep(s.sleep)
+		files, err := GetFiles(s.root)
 		if err != nil {
 			return err
 		}
+		result := s.calculate(files)
+		changeFunc(result)
+	}
+	return nil
+}
 
-		//删除事件
-		for _, s2 := range findOldNotExist(s.filePaths, files) {
-			tmpSC = append(tmpSC, &ScoutChange{
-				Path: s2,
-				Type: ChangeType_Del,
-				FileInfo:nil,
-			})
-			delete(s.filePaths,s2)
-		}
+func (s *Scout) Stop() {
+	s.state = false
+}
 
-		for i:=0;i< len(files);i++{
-			v,ok := s.filePaths[files[i].Name]
-			//新建文件、文件夹事件
-			if !ok {
-				tmpSC = append(tmpSC, &ScoutChange{
-					Path: files[i].Name,
-					Type: ChangeType_Create,
-					FileInfo:files[i],
-				})
-				s.filePaths[files[i].Name]=files[i].ModTime.UnixNano()
-				continue
-			}
-			//文件修改事件
-			if v != files[i].ModTime.UnixNano() {
-				tmpSC = append(tmpSC, &ScoutChange{
-					Path: files[i].Name,
-					Type: ChangeType_Update,
-					FileInfo:files[i],
-				})
-				s.filePaths[files[i].Name]=files[i].ModTime.UnixNano()
-				continue
-			}
-		}
-
-		if len(tmpSC) < 1 {
+// 计算
+func (s *Scout) calculate(info []*FileInfo) []*FileInfo {
+	result := make([]*FileInfo, 0, len(info))
+	//计算新建创建和更新
+	for _, item := range info {
+		id := item.id()
+		v, ok := s.cache[id]
+		//判断是否增加
+		if !ok {
+			item.ChangeType = ChangeType_Create
+			s.cache[id] = item
+			result = append(result, item)
 			continue
 		}
-
-		//总回调
-		changeFunc(tmpSC)
-
+		//判断是否改变
+		if !item.IsDir() && item.ModTime().UnixNano() != v.ModTime().UnixNano() {
+			item.ChangeType = ChangeType_Update
+			s.cache[id] = item
+			result = append(result, item)
+		}
 	}
-
-
-}
-
-
-// Deprecated: 废弃
-func (s *Scout) isRepetition (_new []*gf.FileInfo) []*ScoutChange {
-	var fi = make([]*ScoutChange,0)
+	//计算删除
 	var isDel bool
-	var info *gf.FileInfo
-	for k, _ := range s.filePaths {
+	for s2, cache := range s.cache {
 		isDel = true
-		for i:=0;i< len(_new);i++{
-			if _new[i].Name == k {
+		for _, item := range info {
+			if s2 == item.id() {
 				isDel = false
 				break
 			}
 		}
 		if isDel {
-			delete(s.filePaths,k)
-			fi = append(fi, &ScoutChange{
-				Path: k,
-				Type: ChangeType_Del,
-				FileInfo:info,
-			})
+			cache.ChangeType = ChangeType_Del
+			result = append(result, cache)
+			delete(s.cache, s2)
 		}
 	}
-	return fi
+	return result
 }
 
+type FileInfo struct {
+	os.FileInfo
+	Path string
+	ChangeType
+}
 
+func (f *FileInfo) id() string {
+	return f.Path + f.Name()
+}
 
-// Deprecated: 废弃
-func (s *Scout) isRepetitionV2 (_new []*gf.FileInfo) []*ScoutChange {
-	var w sync.WaitGroup
+func (f *FileInfo) String() string {
+	return fmt.Sprintf("name: %v, Path: %v,modTime: %v, IsDir: %v, changeType: %v", f.Name(), f.Path, f.ModTime().String(), f.IsDir(), f.ChangeType.String())
+}
 
-	var resultSc = make([]*ScoutChange,0)
-	var i uint
-	var oldFileNames = make([]string,0)
-	for k, _ := range s.filePaths {
-		oldFileNames = append(oldFileNames, k)
-		i++
-		if i % 1000 == 0 {
-			w.Add(1)
-			go func() {
-				s.lock.Lock()
-				resultSc = append(resultSc, count(oldFileNames,_new)...)
-				s.lock.Unlock()
-				w.Done()
-			}()
-			oldFileNames = make([]string,0)
+func GetFiles(dir string) ([]*FileInfo, error) {
+	files := make([]*FileInfo, 0, 100)
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil && !strings.Contains(err.Error(), "The system cannot find the file specified.") {
+			return err
 		}
-
-	}
-	w.Wait()
-
-	s.lock.Lock()
-	for _, change := range resultSc {
-		delete(s.filePaths,change.Name)
-		fmt.Println("查处删除项：",change.Name)
-	}
-	s.lock.Unlock()
-	return resultSc
-}
-
-func findOldNotExist(_old map[string]int64,_new []*gf.FileInfo) []string  {
-	var o = make([]string,0)
-	var n = make([]string,0)
-	for s, _ := range _old {
-		o = append(o, s)
-	}
-	for _, info := range _new {
-		n = append(n, info.Name)
-	}
-
-	return _findNotExist(&o,&n)
-}
-
-func _findNotExist(_old *[]string,_new *[]string) []string {
-	existMap := make(map[string]struct{})
-	for _, x := range *_new {
-		existMap[x] = struct{}{}
-	}
-	var notExistList []string
-	for _, x := range *_old {
-		if _, ok := existMap[x]; !ok {
-			notExistList = append(notExistList, x)
-		}
-	}
-	return notExistList
-}
-
-func count(_old []string,_new []*gf.FileInfo) []*ScoutChange  {
-	var isDel bool
-	var info *gf.FileInfo
-	var resultSc = make([]*ScoutChange,0)
-
-	for _, name := range _old {
-		isDel = true
-		for _, info = range _new {
-			if name == info.Name {
-				isDel = false
-				break
-			}
-		}
-		if isDel {
-			resultSc = append(resultSc, &ScoutChange{
-				Path: name,
-				Type: ChangeType_Del,
-				FileInfo:info,
-			})
-		}
-	}
-	return resultSc
-}
-
-func (s *Scout) readFilePath(k string) (int64,bool) {
-	s.lock.Lock()
-	v,ok := s.filePaths[k]
-	s.lock.Unlock()
-	return v,ok
-}
-
-func (s *Scout) writeFilePath(k string,v int64)  {
-	s.lock.Lock()
-	s.filePaths[k] = v
-	s.lock.Unlock()
+		files = append(files, &FileInfo{FileInfo: info, Path: path})
+		return nil
+	})
+	return files, err
 }
