@@ -1,7 +1,10 @@
 package go_scout
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -33,43 +36,77 @@ func (c ChangeType) String() string {
 	}
 }
 
+type Option interface{}
+
+type FilterFunc func(name, fullPath string) bool
+
 type Scout struct {
 	cache map[string]*FileInfo
 	// 休眠时长
 	sleep time.Duration
 	// 侦察变化的路径
-	root  string
-	state bool
-	lock  sync.RWMutex
+	root      string
+	state     bool
+	lock      sync.RWMutex
+	hashCheck bool
+	filter    FilterFunc
 }
 
 // sleepTime /ms 每一次侦察后休眠时长 理想值 1000
 // root	侦察的文件或目录
-func NewScout(root string, sleep time.Duration) (*Scout, error) {
-	s := new(Scout)
-	s.state = true
-	s.root = root
-	s.sleep = sleep
+func NewScout(root string, opt ...Option) (*Scout, error) {
 	_, err := os.Stat(root)
 	if err != nil {
 		return nil, err
 	}
-	files, err := GetFiles(root)
+	s := new(Scout)
+	s.state = true
+	s.sleep = time.Second
+	s.filter = func(name, fullPath string) bool { return true }
+	s.root = root
+	s.cache = make(map[string]*FileInfo)
+	for _, option := range opt {
+		option.(func(scout *Scout))(s)
+	}
+	files, err := GetFiles(s.root, s.filter, s.hashCheck)
 	if err != nil {
 		return nil, err
 	}
-	s.cache = make(map[string]*FileInfo, len(files))
 	for _, item := range files {
 		s.cache[item.id()] = item
 	}
 	return s, nil
 }
 
+// WithScoutSleep 检测休眠时间
+func WithScoutSleep(t time.Duration) Option {
+	return func(s *Scout) {
+		s.sleep = t
+	}
+}
+
+func WithScoutEnableHashCheck(t bool) Option {
+	return func(s *Scout) {
+		s.hashCheck = t
+	}
+}
+
+// WithScoutFilterFunc 过滤那些不需要监控的文件，name: 文件名,fullPath: 路径+文件名，返回值决定是否监控
+func WithScoutFilterFunc(cb func(name, fullPath string) bool) Option {
+	return func(s *Scout) {
+		s.filter = cb
+	}
+}
+
+func (s *Scout) FileInfoMap() map[string]*FileInfo {
+	return s.cache
+}
+
 // running Scout 开始侦察文件变化 入参是一个回调方法 当侦擦到变化时调用回调函数
 func (s *Scout) Start(changeFunc func(info []*FileInfo)) error {
 	for s.state {
 		time.Sleep(s.sleep)
-		files, err := GetFiles(s.root)
+		files, err := GetFiles(s.root, s.filter, s.hashCheck)
 		if err != nil {
 			return err
 		}
@@ -99,6 +136,9 @@ func (s *Scout) calculate(info []*FileInfo) []*FileInfo {
 		}
 		//判断是否改变
 		if !item.IsDir() && item.ModTime().UnixNano() != v.ModTime().UnixNano() {
+			if s.hashCheck {
+
+			}
 			item.ChangeType = ChangeType_Update
 			s.cache[id] = item
 			result = append(result, item)
@@ -127,6 +167,7 @@ type FileInfo struct {
 	os.FileInfo
 	Path string
 	ChangeType
+	md5Val string
 }
 
 func (f *FileInfo) id() string {
@@ -134,17 +175,42 @@ func (f *FileInfo) id() string {
 }
 
 func (f *FileInfo) String() string {
-	return fmt.Sprintf("name: %v, Path: %v,modTime: %v, IsDir: %v, changeType: %v", f.Name(), f.Path, f.ModTime().String(), f.IsDir(), f.ChangeType.String())
+	return fmt.Sprintf("name: %v, Path: %v,modTime: %v, IsDir: %v, changeType: %v md5: %s", f.Name(), f.Path, f.ModTime().String(), f.IsDir(), f.ChangeType.String(), f.md5Val)
 }
 
-func GetFiles(dir string) ([]*FileInfo, error) {
+// GetFiles 获取路径内包含的所有文件、文件夹，root: 路径，filterFunc: 过滤掉那些文件有返回值决定，isCalculateMD5: 是否计算MD5值
+func GetFiles(root string, filterFunc FilterFunc, isCalculateMD5 bool) ([]*FileInfo, error) {
 	files := make([]*FileInfo, 0, 100)
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if !filterFunc(info.Name(), path) {
+			return nil
+		}
 		if err != nil && !strings.Contains(err.Error(), "The system cannot find the file specified.") {
 			return err
 		}
-		files = append(files, &FileInfo{FileInfo: info, Path: path})
+		var md5Val string
+		if !info.IsDir() && isCalculateMD5 {
+			md5Val, err = calculateMD5(path)
+			if err != nil {
+				return err
+			}
+		}
+		files = append(files, &FileInfo{FileInfo: info, Path: path, md5Val: md5Val})
 		return nil
 	})
 	return files, err
+}
+
+func calculateMD5(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("calculateMD5 err: -1 %v", err)
+	}
+	defer file.Close()
+	hash := md5.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", fmt.Errorf("calculateMD5 err: -2 %v", err)
+	}
+	hashInBytes := hash.Sum(nil)
+	return hex.EncodeToString(hashInBytes), nil
 }
