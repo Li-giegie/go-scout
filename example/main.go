@@ -11,8 +11,11 @@ import (
 func main() {
 	s, err := scout.NewScout("./",
 		scout.WithScoutSleep(time.Millisecond*1000),
-		scout.WithScoutEnableHashCheck(true), scout.WithScoutFilterFunc(func(name, fullPath string) bool {
-			fmt.Println(name, "-", fullPath)
+		scout.WithScoutEnableHashCheck(true),
+		scout.WithScoutFilterFunc(func(name, fullPath string) bool {
+			if fullPath[0] == '.' {
+				return false
+			}
 			return true
 		}),
 	)

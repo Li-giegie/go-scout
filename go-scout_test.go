@@ -25,7 +25,6 @@ func TestNewScout(t *testing.T) {
 	}
 	err = s.Start(func(info []*FileInfo) {
 		for _, fileInfo := range info {
-
 			switch fileInfo.ChangeType {
 			case ChangeType_Create:
 			//todo:
@@ -41,14 +40,4 @@ func TestNewScout(t *testing.T) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-}
-
-// a
-func TestCalculateMD5(t *testing.T) {
-	mdgStr, err := calculateMD5("./go.mod")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	fmt.Println(mdgStr, len(mdgStr))
 }

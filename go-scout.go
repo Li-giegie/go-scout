@@ -52,8 +52,7 @@ type Scout struct {
 	filter    FilterFunc
 }
 
-// sleepTime /ms 每一次侦察后休眠时长 理想值 1000
-// root	侦察的文件或目录
+// NewScout 侦察的文件或目录 root 目录
 func NewScout(root string, opt ...Option) (*Scout, error) {
 	_, err := os.Stat(root)
 	if err != nil {
