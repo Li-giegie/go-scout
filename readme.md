@@ -1,12 +1,8 @@
-### [简体中文](#简体中文) | [English](#English)
-
-# 简体中文
 ## [go-scout是一个侦察文件、目录发生变化的侦察服务](#)
 ![golang](https://img.shields.io/badge/golang-v1.19-blue)
 ![simple](https://img.shields.io/badge/simple-extend-green)
-![development](https://img.shields.io/badge/development-master-yellowgreen)
-![serve](https://img.shields.io/badge/serve-v0.2-red)
 
+<<<<<<< HEAD
 [作者邮箱1261930106@qq.com]()
 ### [核心原理:检测文件的变更时间，推导是否新建、删除、更新文件，基于此项目可以轻松的制作一些对文件的监控程序。]()
 ### 特性
@@ -57,27 +53,48 @@
 * [serve version in v0.2 branch](#)
 
 ### Development version usage
+=======
+### 获取
+```
+go get -u github.com/Li-giegie/go-scout
+```
+
+### 使用
+>>>>>>> v0.2
 
 ```go
-    // Create a scout object
-	scout,Paths,err := New(1000,"./")
+package main
+
+import (
+	"fmt"
+	scout "github.com/Li-giegie/go-scout"
+	"time"
+)
+
+func main() {
+	s, err := scout.NewScout("../example", time.Millisecond*100)
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 	}
-	// Returns a scout object, all managed files, directory paths, and an error
-	fmt.Println("Paths：",Paths)
-    // Debug mode is turned on and the entry parameter is optional and the history value is taken when the undeclared object is defined to be off so this is on
-	scout.SetDebug()
-	// The open recon parameter is a callback function that executes if something changes
-	// The ScoutChange object contains the change path and the change type (add, delete, change).
-	err = scout.Scout(func(changePath *[]ScoutChange) {
-		for _, change := range *changePath {
-			fmt.Printf("type:%v path:%v \n",change.Type,change.Path)
+	err = s.Start(func(info []*scout.FileInfo) {
+		for _, fileInfo := range info {
+			switch fileInfo.ChangeType {
+			case scout.ChangeType_Create:
+				//todo
+			case scout.ChangeType_Del:
+				//todo
+			case scout.ChangeType_Update:
+				//todo
+			}
+			fmt.Println(fileInfo.String())
 		}
 	})
+}
 
-	fmt.Println(err)
 ```
+<<<<<<< HEAD
 
 ### Serve version usage
 [The service version is a Post request that sends the changed file and directory details through the configured Http interface to the specified interface]()
+=======
+>>>>>>> v0.2
