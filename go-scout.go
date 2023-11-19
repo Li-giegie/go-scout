@@ -1,117 +1,108 @@
 package go_scout
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"fmt"
-	"io"
+	"github.com/Li-giegie/go-utils/goruntine_manager"
 	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
 
-type ChangeType byte
-
-const (
-	ChangeType_Create ChangeType = 1
-	ChangeType_Del    ChangeType = 2
-	ChangeType_Update ChangeType = 3
-)
-
-func (c ChangeType) String() string {
-	switch c {
-	case ChangeType_Create:
-		return "Create"
-	case ChangeType_Update:
-		return "Update"
-	case ChangeType_Del:
-		return "Delete"
-	case 0:
-		return "null"
-	default:
-		panic("invalid format :" + strconv.Itoa(int(c)))
-	}
+type ScoutI interface {
+	StartEvent(info []*FileInfo)
+	CreateEvent(info []*FileInfo)
+	ChangeEvent(info []*FileInfo)
+	RemoveEvent(info []*FileInfo)
 }
 
 type Option interface{}
 
-type FilterFunc func(name, fullPath string) bool
+type FilterFunc func(path string, info os.FileInfo) bool
 
 type Scout struct {
-	cache map[string]*FileInfo
-	// 休眠时长
-	sleep time.Duration
-	// 侦察变化的路径
-	root      string
-	state     bool
-	lock      sync.RWMutex
-	hashCheck bool
-	filter    FilterFunc
+	cache        map[string]*FileInfo
+	sleep        time.Duration // 休眠时长
+	root         string        // 侦察变化的路径
+	state        bool
+	lock         sync.RWMutex
+	hashCheck    bool
+	goroutineNum int
+	filter       FilterFunc
+	ScoutI
+	goruntine_manager.GoroutineManagerI
 }
 
 // sleepTime /ms 每一次侦察后休眠时长 理想值 1000
 // root	侦察的文件或目录
-func NewScout(root string, opt ...Option) (*Scout, error) {
+func NewScout(root string, sc ScoutI, opt ...Option) (*Scout, error) {
 	_, err := os.Stat(root)
 	if err != nil {
 		return nil, err
 	}
 	s := new(Scout)
-	s.state = true
-	s.sleep = time.Second
-	s.filter = func(name, fullPath string) bool { return true }
 	s.root = root
-	s.cache = make(map[string]*FileInfo)
+	s.state = true
+	s.sleep = DEFAULT_SLEEP
+	s.filter = DEFAULT_FILTERFUNC
+	s.ScoutI = sc
+	s.goroutineNum = DEFAULT_GOROUTINENUM
 	for _, option := range opt {
 		option.(func(scout *Scout))(s)
 	}
-	files, err := GetFiles(s.root, s.filter, s.hashCheck)
+	s.GoroutineManagerI = goruntine_manager.NewGoroutineManger(s.goroutineNum)
+	if err = s.GoroutineManagerI.Start(); err != nil {
+		return nil, err
+	}
+	s.cache, err = GetFiles(s.root, s.filter)
 	if err != nil {
 		return nil, err
 	}
-	for _, item := range files {
-		s.cache[item.id()] = item
-	}
+	s.ScoutI.StartEvent(mapToSlice(s.cache))
 	return s, nil
 }
 
 // WithScoutSleep 检测休眠时间
-func WithScoutSleep(t time.Duration) Option {
+func WithSleep(t time.Duration) Option {
 	return func(s *Scout) {
 		s.sleep = t
 	}
 }
 
-func WithScoutEnableHashCheck(t bool) Option {
+func WithEnableHashCheck(t bool) Option {
 	return func(s *Scout) {
 		s.hashCheck = t
 	}
 }
 
 // WithScoutFilterFunc 过滤那些不需要监控的文件，name: 文件名,fullPath: 路径+文件名，返回值决定是否监控
-func WithScoutFilterFunc(cb func(name, fullPath string) bool) Option {
+func WithFilterFunc(cb FilterFunc) Option {
 	return func(s *Scout) {
 		s.filter = cb
 	}
 }
 
-func (s *Scout) FileInfoMap() map[string]*FileInfo {
-	return s.cache
+// WithScoutFilterFunc 过滤那些不需要监控的文件，name: 文件名,fullPath: 路径+文件名，返回值决定是否监控
+func WithGoroutineNum(n int) Option {
+	return func(s *Scout) {
+		if n <= 0 {
+			return
+		}
+		s.goroutineNum = n
+	}
 }
 
 // running Scout 开始侦察文件变化 入参是一个回调方法 当侦擦到变化时调用回调函数
-func (s *Scout) Start(changeFunc func(info []*FileInfo)) error {
+func (s *Scout) Start() error {
 	for s.state {
 		time.Sleep(s.sleep)
-		files, err := GetFiles(s.root, s.filter, s.hashCheck)
+		newFI, err := GetFiles(s.root, s.filter)
 		if err != nil {
 			return err
 		}
-		result := s.calculate(files)
-		changeFunc(result)
+		if s.hashCheck {
+			newFI = calculateHash(s.cache, newFI, s.Run)
+		}
+		s.calculate(newFI)
 	}
 	return nil
 }
@@ -121,96 +112,76 @@ func (s *Scout) Stop() {
 }
 
 // 计算
-func (s *Scout) calculate(info []*FileInfo) []*FileInfo {
-	result := make([]*FileInfo, 0, len(info))
+func (s *Scout) calculate(newFiles map[string]*FileInfo) {
 	//计算新建创建和更新
-	for _, item := range info {
-		id := item.id()
-		v, ok := s.cache[id]
-		//判断是否增加
+	createList := make([]*FileInfo, 0, 20)
+	updateList := make([]*FileInfo, 0, 20)
+	deleteList := make([]*FileInfo, 0, 20)
+	t := time.Now()
+	defer func() {
+		fmt.Printf("calculate sum: %v\n\n", time.Since(t))
+	}()
+	for _, newF := range newFiles {
+		v, ok := s.cache[newF.path]
+		//判断是否新建
 		if !ok {
-			item.ChangeType = ChangeType_Create
-			s.cache[id] = item
-			result = append(result, item)
+			s.cache[newF.path] = newF
+			createList = append(createList, newF)
 			continue
 		}
 		//判断是否改变
-		if !item.IsDir() && item.ModTime().UnixNano() != v.ModTime().UnixNano() {
-			if s.hashCheck {
-
+		if !newF.IsDir() && newF.modTime != v.modTime {
+			s.cache[newF.path] = newF
+			if s.hashCheck && newF.hash == v.hash {
+				continue
 			}
-			item.ChangeType = ChangeType_Update
-			s.cache[id] = item
-			result = append(result, item)
+			updateList = append(updateList, newF)
 		}
 	}
-	//计算删除
-	var isDel bool
-	for s2, cache := range s.cache {
-		isDel = true
-		for _, item := range info {
-			if s2 == item.id() {
-				isDel = false
-				break
-			}
-		}
-		if isDel {
-			cache.ChangeType = ChangeType_Del
-			result = append(result, cache)
+	var ok bool
+	for s2, info := range s.cache {
+		_, ok = newFiles[s2]
+		if !ok {
+			deleteList = append(deleteList, info)
 			delete(s.cache, s2)
 		}
 	}
-	return result
+	if createList != nil {
+		s.ScoutI.CreateEvent(createList)
+	}
+	if updateList != nil {
+		s.ScoutI.ChangeEvent(updateList)
+	}
+	if deleteList != nil {
+		s.ScoutI.RemoveEvent(deleteList)
+	}
+	return
 }
 
 type FileInfo struct {
 	os.FileInfo
-	Path string
-	ChangeType
-	md5Val string
+	path    string
+	hash    string
+	modTime int64
 }
 
-func (f *FileInfo) id() string {
-	return f.Path + f.Name()
+func (f *FileInfo) GetPath() string {
+	return f.hash
+}
+
+func (f *FileInfo) GetHash() string {
+	return f.hash
+}
+
+func (f *FileInfo) calculateHash() error {
+	if f.IsDir() {
+		return nil
+	}
+	md5Val, err := calculateMD5(f.path)
+	f.hash = md5Val
+	return err
 }
 
 func (f *FileInfo) String() string {
-	return fmt.Sprintf("name: %v, Path: %v,modTime: %v, IsDir: %v, changeType: %v md5: %s", f.Name(), f.Path, f.ModTime().String(), f.IsDir(), f.ChangeType.String(), f.md5Val)
-}
-
-// GetFiles 获取路径内包含的所有文件、文件夹，root: 路径，filterFunc: 过滤掉那些文件有返回值决定，isCalculateMD5: 是否计算MD5值
-func GetFiles(root string, filterFunc FilterFunc, isCalculateMD5 bool) ([]*FileInfo, error) {
-	files := make([]*FileInfo, 0, 100)
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if !filterFunc(info.Name(), path) {
-			return nil
-		}
-		if err != nil && !strings.Contains(err.Error(), "The system cannot find the file specified.") {
-			return err
-		}
-		var md5Val string
-		if !info.IsDir() && isCalculateMD5 {
-			md5Val, err = calculateMD5(path)
-			if err != nil {
-				return err
-			}
-		}
-		files = append(files, &FileInfo{FileInfo: info, Path: path, md5Val: md5Val})
-		return nil
-	})
-	return files, err
-}
-
-func calculateMD5(filePath string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", fmt.Errorf("calculateMD5 err: -1 %v", err)
-	}
-	defer file.Close()
-	hash := md5.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", fmt.Errorf("calculateMD5 err: -2 %v", err)
-	}
-	hashInBytes := hash.Sum(nil)
-	return hex.EncodeToString(hashInBytes), nil
+	return fmt.Sprintf("name: %v, Path: %v,modTime: %v, IsDir: %v, md5: %s", f.Name(), f.path, f.ModTime().String(), f.IsDir(), f.hash)
 }

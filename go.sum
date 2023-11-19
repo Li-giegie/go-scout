@@ -1,0 +1,4 @@
+github.com/Li-giegie/go-utils v0.0.0-20231114054313-ce95a23d4df2 h1:mtZIleI8lph+7dfmz5I6YOwWlIvuLRVKZtVewRQfbsU=
+github.com/Li-giegie/go-utils v0.0.0-20231114054313-ce95a23d4df2/go.mod h1:VmgorL5MYveXQAY6Jcd/kcbBGnt6Ehjqiv7+0b+Q/i8=
+github.com/karrick/godirwalk v1.17.0 h1:b4kY7nqDdioR/6qnbHQyDvmA17u5G1cZ6J+CZXwSWoI=
+github.com/karrick/godirwalk v1.17.0/go.mod h1:j4mkqPuvaLI8mp1DroR3P6ad7cyYd4c1qeJ3RV7ULlk=
