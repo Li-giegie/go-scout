@@ -25,7 +25,7 @@ func getFiles(root string, filterFunc FilterFunc, errCb func(err error) bool) (m
 			if errCb != nil && !errCb(err) {
 				return err
 			}
-			return filepath.SkipAll
+			return filepath.SkipDir
 		}
 		path = filepath.ToSlash(path)
 		if filterFunc != nil && !filterFunc(path, info) {
