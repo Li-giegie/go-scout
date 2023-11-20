@@ -70,7 +70,6 @@ func TestNewScout(t *testing.T) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-
 	err = s.Start()
 	//stop Stop()
 	if err != nil {
