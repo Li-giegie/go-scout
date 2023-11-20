@@ -78,7 +78,7 @@ func TestNewScout(t *testing.T) {
 }
 
 func TestGetFiles(t *testing.T) {
-	f, err := GetFiles("d:/test", nil, nil)
+	f, err := getFiles("d:/test", nil, nil)
 	if err != nil {
 		t.Error(err)
 		return

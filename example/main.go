@@ -50,6 +50,7 @@ func (m *ScoutImpl) ErrorEvent(err error) bool {
 	fmt.Println("err: ", err)
 	return true
 }
+
 func main() {
 	_myScout := &ScoutImpl{root: "./"}
 	sc, err := go_scout.NewScout(_myScout,

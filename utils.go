@@ -18,7 +18,7 @@ var DEFAULT_SLEEP = time.Second
 var DEFAULT_GOROUTINENUM = runtime.NumCPU()
 
 // GetFiles 获取路径内包含的所有文件、文件夹，root: 路径，filterFunc: 过滤掉那些文件有返回值决定，isCalculateMD5: 是否计算MD5值
-func GetFiles(root string, filterFunc FilterFunc, errCb func(err error) bool) (map[string]*FileInfo, error) {
+func getFiles(root string, filterFunc FilterFunc, errCb func(err error) bool) (map[string]*FileInfo, error) {
 	files := make(map[string]*FileInfo, 100)
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
