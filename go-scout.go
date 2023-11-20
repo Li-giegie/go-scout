@@ -149,13 +149,13 @@ func (s *scouter) calculate(newFiles map[string]*FileInfo) {
 			delete(s.cache, s2)
 		}
 	}
-	if createList != nil {
+	if len(createList) > 0 {
 		s.ScouterI.CreateEvent(createList)
 	}
-	if updateList != nil {
+	if len(updateList) > 0 {
 		s.ScouterI.ChangeEvent(updateList)
 	}
-	if deleteList != nil {
+	if len(deleteList) > 0 {
 		s.ScouterI.RemoveEvent(deleteList)
 	}
 	return
