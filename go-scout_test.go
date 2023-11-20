@@ -1,21 +1,27 @@
 package go_scout
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"testing"
-	"time"
 )
 
 type Handler struct {
+	name string
+}
+
+func (h *Handler) Root() string {
+	return h.name
 }
 
 func (h *Handler) StartEvent(info []*FileInfo) {
 	log.Println("start success", len(info))
-	//for _, fileInfo := range info {
-	//	fmt.Println(fileInfo.String())
-	//}
+	for _, fileInfo := range info {
+		fmt.Println(fileInfo.String())
+	}
 }
 
 func (h *Handler) CreateEvent(info []*FileInfo) {
@@ -35,20 +41,30 @@ func (h *Handler) RemoveEvent(info []*FileInfo) {
 	}
 }
 
+func (h *Handler) ErrorEvent(err error) (isContinue bool) {
+	fmt.Println("ErrorEvent ", err)
+	if errors.Is(err, os.ErrPermission) {
+		return true
+	} else if errors.Is(err, os.ErrNotExist) {
+		return true
+	} else if errors.Is(err, filepath.SkipDir) {
+		return true
+	}
+	return false
+}
+
 const testDir = "D:/"
 
 func TestNewScout(t *testing.T) {
-	s, err := NewScout(testDir, &Handler{},
-		WithSleep(time.Millisecond*10),
+	s, err := NewScout(&Handler{name: "./"},
+		WithSleep(DEFAULT_SLEEP),
 		WithEnableHashCheck(true),
+		WithGoroutineNum(DEFAULT_GOROUTINENUM),
 		WithFilterFunc(func(path string, info os.FileInfo) bool {
 			if len(info.Name()) > 0 && info.Name()[0] == '.' {
 				return false
-			} else if len(path) > 0 && path[0] == '.' {
-				return false
-			} else {
-				return true
 			}
+			return true
 		}),
 	)
 	if err != nil {
@@ -62,30 +78,12 @@ func TestNewScout(t *testing.T) {
 }
 
 func TestGetFiles(t *testing.T) {
-	f, err := GetFiles("d:/test", nil)
+	f, err := GetFiles("d:/test", nil, nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	//gm := goruntine_manager.NewGoroutineManger(12)
-	//gm.Start()
-	//calculateHash(nil, f, gm.Run)
-	//for _, info := range f {
-	//	fmt.Println(info.String())
-	//}
 	fmt.Println(len(f))
-}
-
-func TestGetFilesV2(t *testing.T) {
-	a, err := GetFilesV2("d:/test", nil)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	//for s, info := range a {
-	//	fmt.Println(s, info.String())
-	//}
-	fmt.Println(len(a))
 }
 
 func TestCreateFile(t *testing.T) {
@@ -95,7 +93,6 @@ func TestCreateFile(t *testing.T) {
 		return
 	}
 	defer f.Close()
-
 	if _, err = f.Write([]byte("bb")); err != nil {
 		t.Error(err)
 		return

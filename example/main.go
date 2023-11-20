@@ -46,7 +46,7 @@ func (*ScoutImpl) RemoveEvent(info []*go_scout.FileInfo) {
 	}
 }
 
-func (m *ScoutImpl) ErrorCallBack(err error) bool {
+func (m *ScoutImpl) ErrorEvent(err error) bool {
 	fmt.Println("err: ", err)
 	return true
 }

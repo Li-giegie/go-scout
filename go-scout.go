@@ -9,20 +9,22 @@ import (
 )
 
 type ScoutI interface {
-	StartEvent(info []*FileInfo)
-	CreateEvent(info []*FileInfo)
-	ChangeEvent(info []*FileInfo)
-	RemoveEvent(info []*FileInfo)
+	Root() string                           //目录路径
+	StartEvent(info []*FileInfo)            //首次启动后触发检测目录的文件信息
+	CreateEvent(info []*FileInfo)           //检测到创建行为触发
+	ChangeEvent(info []*FileInfo)           //检测到有变更行为触发
+	RemoveEvent(info []*FileInfo)           //检测到有删除行为触发
+	ErrorEvent(err error) (isContinue bool) //isContinue：是否继续，true继续，false遇到错误终止
 }
 
-type Option interface{}
+type Option func(scout *Scout)
 
+// FilterFunc 过滤不需要的文件，回调返回false为过滤
 type FilterFunc func(path string, info os.FileInfo) bool
 
 type Scout struct {
 	cache        map[string]*FileInfo
 	sleep        time.Duration // 休眠时长
-	root         string        // 侦察变化的路径
 	state        bool
 	lock         sync.RWMutex
 	hashCheck    bool
@@ -32,28 +34,25 @@ type Scout struct {
 	goruntine_manager.GoroutineManagerI
 }
 
-// sleepTime /ms 每一次侦察后休眠时长 理想值 1000
-// root	侦察的文件或目录
-func NewScout(root string, sc ScoutI, opt ...Option) (*Scout, error) {
-	_, err := os.Stat(root)
+func NewScout(sc ScoutI, opt ...Option) (*Scout, error) {
+	_, err := os.Stat(sc.Root())
 	if err != nil {
 		return nil, err
 	}
 	s := new(Scout)
-	s.root = root
 	s.state = true
 	s.sleep = DEFAULT_SLEEP
 	s.filter = DEFAULT_FILTERFUNC
 	s.ScoutI = sc
 	s.goroutineNum = DEFAULT_GOROUTINENUM
 	for _, option := range opt {
-		option.(func(scout *Scout))(s)
+		option(s)
 	}
 	s.GoroutineManagerI = goruntine_manager.NewGoroutineManger(s.goroutineNum)
 	if err = s.GoroutineManagerI.Start(); err != nil {
 		return nil, err
 	}
-	s.cache, err = GetFiles(s.root, s.filter)
+	s.cache, err = GetFiles(s.ScoutI.Root(), s.filter, sc.ErrorEvent)
 	if err != nil {
 		return nil, err
 	}
@@ -61,27 +60,28 @@ func NewScout(root string, sc ScoutI, opt ...Option) (*Scout, error) {
 	return s, nil
 }
 
-// WithScoutSleep 检测休眠时间
+// WithSleep 检测休眠时间
 func WithSleep(t time.Duration) Option {
 	return func(s *Scout) {
 		s.sleep = t
 	}
 }
 
+// WithEnableHashCheck 是否开启hash检查文件是否更改
 func WithEnableHashCheck(t bool) Option {
 	return func(s *Scout) {
 		s.hashCheck = t
 	}
 }
 
-// WithScoutFilterFunc 过滤那些不需要监控的文件，name: 文件名,fullPath: 路径+文件名，返回值决定是否监控
+// WithFilterFunc 过滤不需要的文件，回调返回false为过滤掉
 func WithFilterFunc(cb FilterFunc) Option {
 	return func(s *Scout) {
 		s.filter = cb
 	}
 }
 
-// WithScoutFilterFunc 过滤那些不需要监控的文件，name: 文件名,fullPath: 路径+文件名，返回值决定是否监控
+// WithGoroutineNum 启用的协程数量，默认值CPU核心数
 func WithGoroutineNum(n int) Option {
 	return func(s *Scout) {
 		if n <= 0 {
@@ -91,11 +91,11 @@ func WithGoroutineNum(n int) Option {
 	}
 }
 
-// running Scout 开始侦察文件变化 入参是一个回调方法 当侦擦到变化时调用回调函数
+// Start 开启示例
 func (s *Scout) Start() error {
 	for s.state {
 		time.Sleep(s.sleep)
-		newFI, err := GetFiles(s.root, s.filter)
+		newFI, err := GetFiles(s.Root(), s.filter, s.ErrorEvent)
 		if err != nil {
 			return err
 		}
@@ -107,6 +107,7 @@ func (s *Scout) Start() error {
 	return nil
 }
 
+// Stop 停止检测实例
 func (s *Scout) Stop() {
 	s.state = false
 }
@@ -117,10 +118,6 @@ func (s *Scout) calculate(newFiles map[string]*FileInfo) {
 	createList := make([]*FileInfo, 0, 20)
 	updateList := make([]*FileInfo, 0, 20)
 	deleteList := make([]*FileInfo, 0, 20)
-	t := time.Now()
-	defer func() {
-		fmt.Printf("calculate sum: %v\n\n", time.Since(t))
-	}()
 	for _, newF := range newFiles {
 		v, ok := s.cache[newF.path]
 		//判断是否新建
