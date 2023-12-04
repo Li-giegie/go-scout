@@ -169,7 +169,7 @@ type FileInfo struct {
 }
 
 func (f *FileInfo) GetPath() string {
-	return f.hash
+	return f.path
 }
 
 func (f *FileInfo) GetHash() string {
