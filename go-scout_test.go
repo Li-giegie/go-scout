@@ -20,7 +20,7 @@ func (h *Handler) Root() string {
 func (h *Handler) StartEvent(info []*FileInfo) {
 	log.Println("start success", len(info))
 	for _, fileInfo := range info {
-		fmt.Println(fileInfo.String())
+		fmt.Println(fileInfo.GetPath())
 	}
 }
 

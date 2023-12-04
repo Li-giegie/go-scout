@@ -1,5 +1,5 @@
 module github.com/Li-giegie/go-scout
 
-go 1.21
+go 1.21.4
 
-require github.com/Li-giegie/go-utils v0.0.0-20231114054313-ce95a23d4df2
+require github.com/Li-giegie/go-utils v0.0.0-20231204110949-1632835534bf
