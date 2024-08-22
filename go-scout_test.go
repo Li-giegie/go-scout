@@ -1,104 +1,68 @@
 package go_scout
 
 import (
-	"errors"
 	"fmt"
-	"log"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
-type Handler struct {
-	name string
-}
+func TestWalkFile(t *testing.T) {
 
-func (h *Handler) Root() string {
-	return h.name
-}
-
-func (h *Handler) StartEvent(info []*FileInfo) {
-	log.Println("start success", len(info))
-	for _, fileInfo := range info {
-		fmt.Println(fileInfo.GetPath())
-	}
-}
-
-func (h *Handler) CreateEvent(info []*FileInfo) {
-	for _, fileInfo := range info {
-		fmt.Println("CreateEvent ", fileInfo.String())
+	for {
+		filepath.Walk("./d", func(path string, info fs.FileInfo, err error) error {
+			fmt.Println(path, info.ModTime())
+			return nil
+		})
+		time.Sleep(time.Second)
 	}
 
-}
-func (h *Handler) ChangeEvent(info []*FileInfo) {
-	for _, fileInfo := range info {
-		fmt.Println("ChangeEvent ", fileInfo.String())
-	}
-}
-func (h *Handler) RemoveEvent(info []*FileInfo) {
-	for _, fileInfo := range info {
-		fmt.Println("RemoveEvent ", fileInfo.String())
-	}
-}
-
-func (h *Handler) ErrorEvent(err error) (isContinue bool) {
-	fmt.Println("ErrorEvent ", err)
-	if errors.Is(err, os.ErrPermission) {
-		return true
-	} else if errors.Is(err, os.ErrNotExist) {
-		return true
-	} else if errors.Is(err, filepath.SkipDir) {
-		return true
-	}
-	return false
-}
-
-const testDir = "D:/"
-
-func TestNewScout(t *testing.T) {
-	s, err := NewScout(&Handler{name: "./"},
-		WithSleep(DEFAULT_SLEEP),
-		WithEnableHashCheck(true),
-		WithGoroutineNum(DEFAULT_GOROUTINENUM),
-		WithFilterFunc(func(path string, info os.FileInfo) bool {
-			if len(info.Name()) > 0 && info.Name()[0] == '.' {
-				return false
-			}
-			return true
-		}),
-	)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	err = s.Start()
-	//stop Stop()
-	if err != nil {
-		log.Fatalln(err)
-	}
-}
-
-func TestGetFiles(t *testing.T) {
-	f, err := getFiles("d:/", nil, func(err error) bool {
-		fmt.Println(err)
-		return true
+	return
+	s, err := NewScout(&Config{
+		Paths:     []string{"D:\\"},
+		Sleep:     time.Millisecond * 50,
+		EnableHex: false,
+		EventNum:  1024,
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	fmt.Println(len(f))
-}
-
-func TestCreateFile(t *testing.T) {
-	f, err := os.Create("./a.txt")
-	if err != nil {
-		t.Error(err)
-		return
+	s.WalkErrFunc = func(path string, info os.FileInfo, err error) error {
+		//log.Println(path, err)
+		return nil
 	}
-	defer f.Close()
-	if _, err = f.Write([]byte("bb")); err != nil {
-		t.Error(err)
-		return
+	s.FilterFunc = func(path string, info os.FileInfo) bool {
+		if path[0] == '.' {
+			return false
+		}
+		return true
+	}
+	var d1, d2 time.Time
+	s.BeforeWalkPathFunc = func() {
+		d1 = time.Now()
+	}
+	s.AfterWalkPathFunc = func(info *map[string]*FileInfo) {
+		fmt.Println("搜索耗时", time.Since(d1), len(*info))
+	}
+	s.BeforeCalculateFunc = func() {
+		d2 = time.Now()
+	}
+	s.AfterCalculateFunc = func() {
+		d3 := time.Now()
+		fmt.Println("计算耗时", d3.Sub(d2))
+		fmt.Println("总计耗时", d3.Sub(d1))
+	}
+	for {
+		s.Restart()
+		for value := range s.EventChan {
+			//log.Println(value.Type, value.FileInfo)
+			_ = value
+		}
+		time.Sleep(time.Second * 3)
+		//ssadasdasdasdasdasdasdasasdas
 	}
 
 }

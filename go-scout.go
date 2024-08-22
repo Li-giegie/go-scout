@@ -1,179 +1,269 @@
 package go_scout
 
 import (
+	"context"
 	"fmt"
-	"github.com/Li-giegie/go-utils/goruntine_manager"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
 
-type ScouterI interface {
-	Root() string                           //目录路径
-	StartEvent(info []*FileInfo)            //首次启动后触发检测目录的文件信息
-	CreateEvent(info []*FileInfo)           //检测到创建行为触发
-	ChangeEvent(info []*FileInfo)           //检测到有变更行为触发
-	RemoveEvent(info []*FileInfo)           //检测到有删除行为触发
-	ErrorEvent(err error) (isContinue bool) //isContinue：是否继续，true继续，false遇到错误终止
+var (
+	SkipDir = fs.SkipDir
+	SkipAll = fs.SkipAll
+)
+
+type Config struct {
+	Paths     []string
+	Sleep     time.Duration
+	EnableHex bool
+	EventNum  uint
 }
 
-type Option func(scout *scouter)
-
-// FilterFunc 过滤不需要的文件，回调返回false为过滤
-type FilterFunc func(path string, info os.FileInfo) bool
-
-type ScoutI interface {
-	Start() error
-	Stop()
-}
-
-type scouter struct {
-	cache        map[string]*FileInfo
-	sleep        time.Duration // 休眠时长
-	state        bool
-	lock         sync.RWMutex
-	hashCheck    bool
-	goroutineNum int
-	filter       FilterFunc
-	ScouterI
-	goruntine_manager.GoroutineManagerI
-}
-
-// NewScout 创建一个侦查实例
-func NewScout(sc ScouterI, opt ...Option) (ScoutI, error) {
-	_, err := os.Stat(sc.Root())
-	if err != nil {
-		return nil, err
+func (c *Config) init() error {
+	if len(c.Paths) == 0 {
+		return fmt.Errorf("paths can‘t be empty")
 	}
-	s := new(scouter)
-	s.state = true
-	s.sleep = DEFAULT_SLEEP
-	s.filter = DEFAULT_FILTERFUNC
-	s.ScouterI = sc
-	s.goroutineNum = DEFAULT_GOROUTINENUM
-	for _, option := range opt {
-		option(s)
-	}
-	s.GoroutineManagerI = goruntine_manager.NewGoroutineManger(s.goroutineNum)
-	if err = s.GoroutineManagerI.Start(); err != nil {
-		return nil, err
-	}
-	s.cache, err = getFiles(s.ScouterI.Root(), s.filter, sc.ErrorEvent)
-	if err != nil {
-		return nil, err
-	}
-	s.ScouterI.StartEvent(mapToSlice(s.cache))
-	return s, nil
-}
-
-// WithSleep 检测休眠时间
-func WithSleep(t time.Duration) Option {
-	return func(s *scouter) {
-		s.sleep = t
-	}
-}
-
-// WithEnableHashCheck 是否开启hash检查文件是否更改
-func WithEnableHashCheck(t bool) Option {
-	return func(s *scouter) {
-		s.hashCheck = t
-	}
-}
-
-// WithFilterFunc 过滤不需要的文件，回调返回false为过滤掉
-func WithFilterFunc(cb FilterFunc) Option {
-	return func(s *scouter) {
-		s.filter = cb
-	}
-}
-
-// WithGoroutineNum 启用的协程数量，默认值CPU核心数
-func WithGoroutineNum(n int) Option {
-	return func(s *scouter) {
-		if n <= 0 {
-			return
-		}
-		s.goroutineNum = n
-	}
-}
-
-// Start 开启示例
-func (s *scouter) Start() error {
-	for s.state {
-		time.Sleep(s.sleep)
-		newFI, err := getFiles(s.Root(), s.filter, s.ErrorEvent)
-		if err != nil {
-			return err
-		}
-		if s.hashCheck {
-			newFI = calculateHash(s.cache, newFI, s.Run)
-		}
-		s.calculate(newFI)
+	for i, path := range c.Paths {
+		c.Paths[i] = filepath.Clean(path)
 	}
 	return nil
 }
 
+type EventValue struct {
+	Type     EventType
+	Error    error
+	FileInfo *FileInfo
+}
+
+type Scout struct {
+	cache       map[string]*FileInfo
+	state       bool
+	WalkErrFunc func(path string, info os.FileInfo, err error) error
+	FilterFunc  func(path string, info os.FileInfo) bool
+	// BeforeWalkPathFunc 开始搜索Paths中的路径
+	BeforeWalkPathFunc func()
+	// AfterWalkPathFunc 搜索之后的所有文件
+	AfterWalkPathFunc func(*map[string]*FileInfo)
+	// BeforeCalculateFunc 开始计算差异
+	BeforeCalculateFunc func()
+	// AfterCalculateFunc 计算结束，并已经通知到EventChan中
+	AfterCalculateFunc func()
+	EventChan          chan *EventValue
+	lock               *sync.RWMutex
+	wg                 *sync.WaitGroup
+	Conf               *Config
+}
+
+// NewScout 创建一个侦查实例
+func NewScout(conf *Config) (*Scout, error) {
+	s := new(Scout)
+	s.Conf = conf
+	err := s.Conf.init()
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *Scout) init() (err []error) {
+	s.state = true
+	s.wg = &sync.WaitGroup{}
+	s.lock = &sync.RWMutex{}
+	s.cache, err = s.getFileInfos()
+	if len(err) > 0 {
+		return err
+	}
+	for _, info := range s.cache {
+		s.EventChan <- &EventValue{
+			Type:     EventType_Init,
+			FileInfo: info,
+		}
+	}
+	return nil
+}
+
+// Start 开启
+func (s *Scout) Start() {
+	s.EventChan = make(chan *EventValue, s.Conf.EventNum)
+	go func() {
+		var errs []error
+		defer func() {
+			for _, err := range errs {
+				s.EventChan <- &EventValue{
+					Type:  EventType_Error,
+					Error: err,
+				}
+			}
+			close(s.EventChan)
+		}()
+		if errs = s.init(); len(errs) > 0 {
+			return
+		}
+		var fileInfo map[string]*FileInfo
+		for s.state {
+			fileInfo, errs = s.getFileInfos()
+			if len(errs) > 0 {
+				return
+			}
+			s.calculate(fileInfo)
+		}
+	}()
+}
+
 // Stop 停止检测实例
-func (s *scouter) Stop() {
+func (s *Scout) Stop() {
 	s.state = false
 }
 
-// 计算
-func (s *scouter) calculate(newFiles map[string]*FileInfo) {
-	//计算新建创建和更新
-	createList := make([]*FileInfo, 0, 20)
-	updateList := make([]*FileInfo, 0, 20)
-	deleteList := make([]*FileInfo, 0, 20)
+func (s *Scout) Restart() {
+	s.Stop()
+	time.Sleep(s.Conf.Sleep)
+	s.Start()
+}
+
+func (s *Scout) calculate(newFiles map[string]*FileInfo) {
+	if s.BeforeCalculateFunc != nil {
+		s.BeforeCalculateFunc()
+	}
+	if s.AfterCalculateFunc != nil {
+		s.AfterCalculateFunc()
+	}
 	for _, newF := range newFiles {
 		v, ok := s.cache[newF.path]
 		//判断是否新建
 		if !ok {
 			s.cache[newF.path] = newF
-			createList = append(createList, newF)
+			s.EventChan <- &EventValue{
+				Type:     EventType_Create,
+				FileInfo: newF,
+			}
 			continue
 		}
 		//判断是否改变
-		if !newF.IsDir() && newF.modTime != v.modTime {
+		if !newF.IsDir() && newF.ModTime().UnixNano() != v.ModTime().UnixNano() {
 			s.cache[newF.path] = newF
-			if s.hashCheck && newF.hash == v.hash {
+			if s.Conf.EnableHex && newF.hash == v.hash {
 				continue
 			}
-			updateList = append(updateList, newF)
+			s.EventChan <- &EventValue{
+				Type:     EventType_Change,
+				FileInfo: newF,
+			}
 		}
 	}
 	var ok bool
 	for s2, info := range s.cache {
 		_, ok = newFiles[s2]
 		if !ok {
-			deleteList = append(deleteList, info)
+			s.EventChan <- &EventValue{
+				Type:     EventType_Remove,
+				FileInfo: info,
+			}
 			delete(s.cache, s2)
 		}
-	}
-	if len(createList) > 0 {
-		s.ScouterI.CreateEvent(createList)
-	}
-	if len(updateList) > 0 {
-		s.ScouterI.ChangeEvent(updateList)
-	}
-	if len(deleteList) > 0 {
-		s.ScouterI.RemoveEvent(deleteList)
 	}
 	return
 }
 
+func (s *Scout) getFileInfos() (result map[string]*FileInfo, errs []error) {
+	if s.BeforeWalkPathFunc != nil {
+		s.BeforeWalkPathFunc()
+	}
+	if s.AfterWalkPathFunc != nil {
+		defer s.AfterWalkPathFunc(&result)
+	}
+	result = make(map[string]*FileInfo, len(s.Conf.Paths))
+	errs = make([]error, 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		for _, path := range s.Conf.Paths {
+			s.wg.Add(1)
+			go func(ctx context.Context, path string) {
+				defer func() {
+					s.wg.Done()
+				}()
+				var err error
+				var done = make(chan struct{})
+				var infos []*FileInfo
+				go func() {
+					infos, err = s.getFileInfo(path)
+					if err != nil {
+						cancel()
+						errs = append(errs, err)
+						return
+					}
+					done <- struct{}{}
+				}()
+				select {
+				case <-ctx.Done():
+					return
+				case <-done:
+					s.lock.Lock()
+					for _, info := range infos {
+						result[info.path] = info
+					}
+					s.lock.Unlock()
+				}
+			}(ctx, path)
+		}
+		s.wg.Wait()
+		cancel()
+	}()
+	<-ctx.Done()
+	return result, errs
+}
+
+func (s *Scout) getFileInfo(path string) (fileInfo []*FileInfo, err error) {
+	fileInfo = make([]*FileInfo, 0, 10)
+	err = filepath.Walk(path, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			if s.WalkErrFunc != nil {
+				return s.WalkErrFunc(path, info, err)
+			}
+			return err
+		}
+		if s.FilterFunc != nil {
+			if !s.FilterFunc(path, info) {
+				return nil
+			}
+		}
+		tmpInfo := new(FileInfo)
+		tmpInfo.path = path
+		tmpInfo.FileInfo = info
+		fileInfo = append(fileInfo, tmpInfo)
+		if !info.IsDir() && s.Conf.EnableHex {
+			v, ok := s.cache[path]
+			if ok && v.FileInfo.ModTime().UnixNano() != info.ModTime().UnixNano() {
+				if err = tmpInfo.calculateHash(); err != nil {
+					if s.WalkErrFunc == nil {
+						return err
+					}
+					if err = s.WalkErrFunc(path, info, err); err != nil {
+						errStr := err.Error()
+						if errStr != fs.SkipAll.Error() && errStr != fs.SkipDir.Error() {
+							return err
+						}
+					}
+				}
+			}
+		}
+		return nil
+	})
+	return fileInfo, err
+}
+
 type FileInfo struct {
 	os.FileInfo
-	path    string
-	hash    string
-	modTime int64
+	path string
+	hash string
 }
 
-func (f *FileInfo) GetPath() string {
+func (f *FileInfo) Path() string {
 	return f.path
-}
-
-func (f *FileInfo) GetHash() string {
-	return f.hash
 }
 
 func (f *FileInfo) calculateHash() error {
@@ -186,5 +276,32 @@ func (f *FileInfo) calculateHash() error {
 }
 
 func (f *FileInfo) String() string {
-	return fmt.Sprintf("name: %v, Path: %v,modTime: %v, IsDir: %v, md5: %s", f.Name(), f.path, f.ModTime().String(), f.IsDir(), f.hash)
+	return fmt.Sprintf("FileInfo: %v, Path: %v,modTime: %v, IsDir: %v, hex: %s", f.Name(), f.path, f.ModTime().String(), f.IsDir(), f.hash)
 }
+
+type EventType uint8
+
+func (e EventType) String() string {
+	switch e {
+	case EventType_Init:
+		return "init"
+	case EventType_Create:
+		return "create"
+	case EventType_Change:
+		return "change"
+	case EventType_Remove:
+		return "remove"
+	case EventType_Error:
+		return "error"
+	default:
+		return "invalid event type"
+	}
+}
+
+const (
+	EventType_Init EventType = iota
+	EventType_Create
+	EventType_Change
+	EventType_Remove
+	EventType_Error
+)
