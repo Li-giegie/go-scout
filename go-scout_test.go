@@ -1,68 +1,58 @@
 package go_scout
 
 import (
+	"errors"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
-func TestWalkFile(t *testing.T) {
-
-	for {
-		filepath.Walk("./d", func(path string, info fs.FileInfo, err error) error {
-			fmt.Println(path, info.ModTime())
-			return nil
-		})
-		time.Sleep(time.Second)
-	}
-
-	return
-	s, err := NewScout(&Config{
-		Paths:     []string{"D:\\"},
-		Sleep:     time.Millisecond * 50,
-		EnableHex: false,
-		EventNum:  1024,
+func TestName(t *testing.T) {
+	//sss
+	s := NewScout(&Config{
+		Paths:         []string{"./"},
+		Sleep:         time.Millisecond * 200,
+		EnableHex:     false,
+		EventChanSize: 1024,
 	})
-	if err != nil {
+	s.WalkErrFunc = func(path string, info os.FileInfo, err error) error {
+		if errors.Is(err, os.ErrPermission) {
+			return SkipDir
+		}
+		return nil
+	}
+	s.FilterFunc = func(path string, info os.FileInfo) SkipType {
+		if info.IsDir() {
+			if info.Name() != "." && info.Name()[0] == '.' {
+				return SkipType_Dir
+			}
+			return SkipType_NoSkip
+		}
+		if info.Name()[0] == '.' {
+			return SkipType_File
+		}
+		return SkipType_NoSkip
+	}
+	//t1 := time.Now()
+	//s.BeforeCalculateFunc = func() {
+	//	t1 = time.Now()
+	//}
+	//s.AfterCalculateFunc = func() {
+	//	fmt.Println(time.Since(t1))
+	//}
+	if err := s.Start(); err != nil {
 		t.Error(err)
 		return
 	}
-	s.WalkErrFunc = func(path string, info os.FileInfo, err error) error {
-		//log.Println(path, err)
-		return nil
-	}
-	s.FilterFunc = func(path string, info os.FileInfo) bool {
-		if path[0] == '.' {
-			return false
-		}
-		return true
-	}
-	var d1, d2 time.Time
-	s.BeforeWalkPathFunc = func() {
-		d1 = time.Now()
-	}
-	s.AfterWalkPathFunc = func(info *map[string]*FileInfo) {
-		fmt.Println("搜索耗时", time.Since(d1), len(*info))
-	}
-	s.BeforeCalculateFunc = func() {
-		d2 = time.Now()
-	}
-	s.AfterCalculateFunc = func() {
-		d3 := time.Now()
-		fmt.Println("计算耗时", d3.Sub(d2))
-		fmt.Println("总计耗时", d3.Sub(d1))
-	}
-	for {
-		s.Restart()
-		for value := range s.EventChan {
-			//log.Println(value.Type, value.FileInfo)
-			_ = value
-		}
-		time.Sleep(time.Second * 3)
-		//ssadasdasdasdasdasdasdasasdas
-	}
 
+	for value := range s.EventChan {
+		switch value.Type {
+		case EventType_Error:
+			fmt.Println("错误", value.Type, value.Error)
+		default:
+			fmt.Println(value.Type, value.FileInfo.String())
+		}
+	}
+	fmt.Println("结束")
 }
