@@ -87,12 +87,13 @@ func (s *Scout) Start() (err error) {
 		}()
 		fileList := make([]*FileInfo, 0, len(s.Conf.Paths))
 		var ps []*FileInfo
+		var isDir bool
 		for _, path := range s.Conf.Paths {
-			ps, sErr = s.loadPath(path)
+			ps, isDir, sErr = s.loadPath(path)
 			if sErr != nil {
 				return
 			}
-			if len(ps) == 1 && !ps[0].IsDir() {
+			if !isDir {
 				fileList = append(fileList, ps[0])
 				continue
 			}
@@ -107,7 +108,12 @@ func (s *Scout) Start() (err error) {
 	return nil
 }
 
-func (s *Scout) loadPath(path string) (paths []*FileInfo, err error) {
+func (s *Scout) loadPath(path string) (paths []*FileInfo, isDir bool, err error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, false, err
+	}
+	isDir = info.IsDir()
 	paths = make([]*FileInfo, 0, 10)
 	err = s.walk(path, func(path string, info fs.FileInfo) error {
 		fInfo := new(FileInfo)

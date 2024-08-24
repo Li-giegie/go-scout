@@ -9,7 +9,6 @@ import (
 )
 
 func TestName(t *testing.T) {
-	//sss
 	s := NewScout(&Config{
 		Paths:         []string{"./"},
 		Sleep:         time.Millisecond * 200,
